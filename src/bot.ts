@@ -70,3 +70,41 @@ bot.onText(/\/connect/, async (msg) => {
 		bot.sendMessage(msg.chat.id, "Connection failed: " + errorMessage);
 	}
 });
+
+// /transact command
+bot.onText(/\/transact/, async (msg) => {
+	if (!msg.from) return;
+	const session = sessions.get(msg.from.id);
+	if (!session) return bot.sendMessage(msg.chat.id, "Please connect your wallet first with /connect!");
+
+	// Prompt confirmation
+	bot.sendMessage(msg.chat.id, "Approve sample Uniswap V4 swap on Ethereum? Reply YES/NO.");
+	bot.once('message', async (confirmMsg) => {
+		if (!confirmMsg) return;
+		if (confirmMsg.text && confirmMsg.text.toLowerCase() === 'yes') {
+			try {
+				const txParams = {
+					// TODO: Add actual transaction parameters
+					to: '0x...', // recipient address
+					value: '0', // amount in wei
+					data: '0x' // transaction data
+				};
+				const response = await privy.wallets().ethereum().sendTransaction(session.walletId, {
+					caip2: 'eip155:1', // Ethereum mainnet (use testnet for testing)
+					params: { transaction: txParams }
+				});
+				bot.sendMessage(msg.chat.id, `Tx sent: ${response.hash}`);
+			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : String(error);
+				bot.sendMessage(msg.chat.id, "Tx failed: " + errorMessage);
+			}
+		} else {
+			bot.sendMessage(msg.chat.id, "Transaction canceled.");
+		}
+	});
+});
+
+// TODO: create /analyze command to do chain queries and create a summary to be fed into the agent
+// TODO: create /opportunities to call specific skills and suggest potential LPs/new tokens
+
+
