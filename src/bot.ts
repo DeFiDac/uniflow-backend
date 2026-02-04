@@ -92,3 +92,42 @@ bot.onText(/\/connect/, async (msg) => {
 		bot.sendMessage(msg.chat.id, "Connection failed: " + errorMessage);
 	}
 });
+
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+	console.log(`\n${signal} received. Shutting down gracefully...`);
+
+	try {
+		// Stop polling
+		await bot.stopPolling();
+		console.log('✅ Bot stopped polling');
+
+		// Close health check server
+		healthServer.close(() => {
+			console.log('✅ Health server closed');
+		});
+
+		// Clear sessions
+		sessions.clear();
+		console.log('✅ Sessions cleared');
+
+		console.log('👋 Shutdown complete');
+		process.exit(0);
+	} catch (error) {
+		console.error('❌ Error during shutdown:', error);
+		process.exit(1);
+	}
+};
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle polling errors
+bot.on('polling_error', (error) => {
+	console.error('❌ Polling error:', error.message);
+	// Don't exit - let Railway restart policy handle it
+});
+
+console.log('✅ UniFlow Bot is running and listening for commands');
+console.log('📡 Polling mode active');
