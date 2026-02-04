@@ -13,8 +13,7 @@ const privy = new PrivyClient({
 // TODO: upgrade to DB for persistence
 const sessions = new Map();
 
-// Constants
-const RESPONSE_TIMEOUT = 60000; // 60 seconds for user responses
+const RESPONSE_TIMEOUT = 60000;
 
 // Global error handler
 bot.on('error', (error) => {
@@ -98,7 +97,7 @@ bot.onText(/\/connect/, async (msg) => {
 
 		// Store in session
 		sessions.set(msg.from.id, { userId: privyUser.id, walletId });
-		await bot.sendMessage(msg.chat.id, `✅ Wallet connected successfully!\n\nWallet ID: ${walletId}\n\nYou can now use /transact to send transactions.`);
+		await bot.sendMessage(msg.chat.id, `✅ Wallet connected successfully!\n\nWallet ID: ${walletId}\n\nAvailable commands:\n/transact - Send transactions\n/disconnect - End session`);
 	} catch (error) {
 		console.error('[/connect] Error:', error);
 		const errorMessage = error instanceof Error ? error.message : String(error);
@@ -221,6 +220,67 @@ bot.onText(/\/transact/, async (msg) => {
 	}
 });
 
+// /disconnect command
+bot.onText(/\/disconnect/, async (msg) => {
+	try {
+		// Validate inputs
+		if (!msg.from) {
+			console.error('[/disconnect] Missing msg.from');
+			return;
+		}
+		if (!msg.chat?.id) {
+			console.error('[/disconnect] Missing chat ID');
+			return;
+		}
+
+		const userId = msg.from.id;
+		const chatId = msg.chat.id;
+
+		console.log(`[/disconnect] User ${userId} initiated disconnect`);
+
+		// Check if session exists
+		const session = sessions.get(userId);
+		if (!session) {
+			await bot.sendMessage(
+				chatId,
+				`ℹ️ You're not currently connected.\n\nUse /connect to link your wallet and start using agentic features.`
+			);
+			return;
+		}
+
+		// Remove session
+		const walletId = session.walletId;
+		sessions.delete(userId);
+		console.log(`[/disconnect] User ${userId} disconnected from wallet ${walletId}`);
+
+		// Send success message
+		await bot.sendMessage(
+			chatId,
+			`✅ Disconnected successfully!\n\n` +
+			`Your wallet remains safe and accessible. You've simply ended this bot session.\n\n` +
+			`To reconnect and use agentic features again, use /connect anytime.\n\n` +
+			`Available commands:\n` +
+			`/connect - Link your wallet\n` +
+			`/help - View all commands`
+		);
+
+	} catch (error) {
+		console.error('[/disconnect] Error:', error);
+		const errorMessage = error instanceof Error ? error.message : String(error);
+
+		try {
+			await bot.sendMessage(
+				msg.chat.id,
+				`❌ Failed to disconnect. Please try again.\n\n` +
+				`If the problem persists, please contact support.\n\n` +
+				`Error: ${errorMessage}`
+			);
+		} catch (sendError) {
+			console.error('[/disconnect] Failed to send error message:', sendError);
+		}
+	}
+});
+
 // TODO: create /analyze command to do chain queries and create a summary to be fed into the agent
 // TODO: create /opportunities to call specific skills and suggest potential LPs/new tokens
 
@@ -236,7 +296,7 @@ bot.onText(/\/transact/, async (msg) => {
 	}
 
 	console.log('✅ Bot started successfully');
-	console.log('📱 Listening for commands: /connect, /transact');
+	console.log('📱 Listening for commands: /connect, /transact, /disconnect');
 })();
 
 
