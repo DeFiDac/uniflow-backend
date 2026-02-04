@@ -1,5 +1,5 @@
 {
-  "name": "uniflow-agentic-wallets",
+  "name": "uniflow-telegram-bot",
   "version": "1.0.0",
   "main": "index.js",
   "packageManager": "pnpm@9.15.4",
