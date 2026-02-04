@@ -2,6 +2,8 @@ require('dotenv').config();
 import TelegramBot from 'node-telegram-bot-api';
 import { PrivyClient } from '@privy-io/node';
 import { startHealthServer } from './health';
+import { SessionData } from './types';
+import { handleConnect, handleTransact, handleDisconnect } from './commands';
 
 // Validate critical environment variables
 const requiredEnvVars = [
@@ -30,7 +32,10 @@ const privy = new PrivyClient({
 
 // In-memory session storage (Map for user data)
 // TODO: upgrade to DB for persistence
-const sessions = new Map();
+const sessions = new Map<number, SessionData>();
+
+// Shared dependencies for command handlers
+const deps = { bot, privy, sessions };
 
 // Start health check server
 const healthServer = startHealthServer();
@@ -41,56 +46,18 @@ bot.onText(/\/connect/, async (msg) => {
 		if (!msg.from) return;
 		const telegramUserId = msg.from.id.toString();
 
-		let privyUser;
-		try {
-			// Check if a Privy user exists with Telegram user ID
-			privyUser = await privy.users().getByTelegramUserID({
-				telegram_user_id: telegramUserId,
-			});
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error);
-			if (errorMessage.includes('not found')) {
-				privyUser = await privy.users().create({
-					linked_accounts: [
-						{
-							type: 'telegram',
-							telegram_user_id: telegramUserId
-						}
-					]
-				});
-			} else {
-				throw error;
-			}
-		}
-
-		// Create a wallet with bot as additional signer (agentic signer)
-		let walletId: string;
-		const existingWallet = privyUser.linked_accounts.find(acc => acc.type === 'wallet');
-		if (!existingWallet) {
-			const wallet = await privy.wallets().create({
-				// TODO: change chain type based on users' demand (if possible)
-				chain_type: 'ethereum',
-				owner: { user_id: privyUser.id },
-				additional_signers: [
-					{
-						signer_id: process.env.PRIVY_SIGNER_ID ?? "",
-						override_policy_ids: []
-					}
-				]
-			});
-			walletId = wallet.id;
-		} else {
-			// For existing wallets from linked_accounts, use address as identifier
-			walletId = existingWallet.address;
-		}
-
-		// Store in session
-		sessions.set(msg.from.id, { userId: privyUser.id, walletId });
-		bot.sendMessage(msg.chat.id, `Wallet connected/created! ID: ${walletId}. Now try /analyze.`);
-	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		bot.sendMessage(msg.chat.id, "Connection failed: " + errorMessage);
+const logSafeError = (label: string, err: unknown) => {
+	if (err instanceof Error) {
+		console.error(label, { message: err.message, stack: err.stack });
+		return;
 	}
+
+	console.error(label, String(err));
+};
+
+// Global error handler
+bot.on('error', (error) => {
+	logSafeError('[Bot Error]', error);
 });
 
 // Graceful shutdown handler
@@ -131,3 +98,29 @@ bot.on('polling_error', (error) => {
 
 console.log('✅ UniFlow Bot is running and listening for commands');
 console.log('📡 Polling mode active');
+bot.on('polling_error', (error) => {
+	logSafeError('[Polling Error]', error);
+});
+
+// Command handlers
+bot.onText(/\/connect/, (msg) => handleConnect(msg, deps));
+bot.onText(/\/transact/, (msg) => handleTransact(msg, deps));
+bot.onText(/\/disconnect/, (msg) => handleDisconnect(msg, deps));
+
+// TODO: create /analyze command to do chain queries and create a summary to be fed into the agent
+// TODO: create /opportunities to call specific skills and suggest potential LPs/new tokens
+
+// Startup validation
+(() => {
+	const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
+	const missing = requiredEnvVars.filter((v) => !process.env[v]);
+
+	if (missing.length > 0) {
+		console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+		console.error('Please check your .env file and ensure all required variables are set.');
+		process.exit(1);
+	}
+
+	console.log('✅ Bot started successfully');
+	console.log('📱 Listening for commands: /connect, /transact, /disconnect');
+})();
