@@ -40,12 +40,6 @@ const deps = { bot, privy, sessions };
 // Start health check server
 const healthServer = startHealthServer();
 
-// Connect command
-bot.onText(/\/connect/, async (msg) => {
-	try {
-		if (!msg.from) return;
-		const telegramUserId = msg.from.id.toString();
-
 const logSafeError = (label: string, err: unknown) => {
 	if (err instanceof Error) {
 		console.error(label, { message: err.message, stack: err.stack });
@@ -92,13 +86,6 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle polling errors
 bot.on('polling_error', (error) => {
-	console.error('❌ Polling error:', error.message);
-	// Don't exit - let Railway restart policy handle it
-});
-
-console.log('✅ UniFlow Bot is running and listening for commands');
-console.log('📡 Polling mode active');
-bot.on('polling_error', (error) => {
 	logSafeError('[Polling Error]', error);
 });
 
@@ -110,17 +97,6 @@ bot.onText(/\/disconnect/, (msg) => handleDisconnect(msg, deps));
 // TODO: create /analyze command to do chain queries and create a summary to be fed into the agent
 // TODO: create /opportunities to call specific skills and suggest potential LPs/new tokens
 
-// Startup validation
-(() => {
-	const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
-	const missing = requiredEnvVars.filter((v) => !process.env[v]);
-
-	if (missing.length > 0) {
-		console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
-		console.error('Please check your .env file and ensure all required variables are set.');
-		process.exit(1);
-	}
-
-	console.log('✅ Bot started successfully');
-	console.log('📱 Listening for commands: /connect, /transact, /disconnect');
-})();
+console.log('✅ UniFlow Bot is running and listening for commands');
+console.log('📡 Polling mode active');
+console.log('📱 Available commands: /connect, /transact, /disconnect');
