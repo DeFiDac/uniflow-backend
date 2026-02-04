@@ -48,16 +48,17 @@ export async function handleTransact(
 		}, RESPONSE_TIMEOUT);
 
 		bot.once('message', async (confirmMsg) => {
+			// Validate confirmation message is from correct user (synchronous checks)
+			if (!confirmMsg || !confirmMsg.from || confirmMsg.from.id !== userId) {
+				console.log('[/transact] Invalid confirmation message');
+				return;
+			}
+
+			// Valid message from correct user - set flag and clear timeout BEFORE any async work
+			responseReceived = true;
+			clearTimeout(timeoutId);
+
 			try {
-				responseReceived = true;
-				clearTimeout(timeoutId);
-
-				// Validate confirmation message
-				if (!confirmMsg || !confirmMsg.from || confirmMsg.from.id !== userId) {
-					console.log('[/transact] Invalid confirmation message');
-					return;
-				}
-
 				if (!confirmMsg.text) {
 					await bot.sendMessage(chatId, '❌ Please reply with text: YES or NO.');
 					return;
