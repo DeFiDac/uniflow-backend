@@ -35,9 +35,9 @@ export async function handleConnect(
 					linked_accounts: [
 						{
 							type: 'telegram',
-							telegram_user_id: telegramUserId
-						}
-					]
+							telegram_user_id: telegramUserId,
+						},
+					],
 				});
 				console.log(`[/connect] Created new Privy user: ${privyUser.id}`);
 			} else {
@@ -53,10 +53,11 @@ export async function handleConnect(
 
 		// Create a wallet with bot as additional signer (agentic signer)
 		let walletId: string;
-		const existingWallet = privyUser.linked_accounts.find(acc => acc.type === 'wallet');
+		const existingWallet = privyUser.linked_accounts.find((acc) => acc.type === 'wallet');
 
 		// Check if existing wallet is an embedded wallet with an ID
-		const hasEmbeddedWalletId = existingWallet &&
+		const hasEmbeddedWalletId =
+			existingWallet &&
 			'wallet_client' in existingWallet &&
 			existingWallet.wallet_client === 'privy' &&
 			'id' in existingWallet &&
@@ -81,9 +82,9 @@ export async function handleConnect(
 				additional_signers: [
 					{
 						signer_id: signerId,
-						override_policy_ids: []
-					}
-				]
+						override_policy_ids: [],
+					},
+				],
 			});
 			walletId = wallet.id;
 			console.log(`[/connect] Created wallet: ${walletId}`);

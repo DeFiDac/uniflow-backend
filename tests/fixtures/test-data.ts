@@ -1,8 +1,8 @@
 import { SessionData } from '@/types';
 
 export const mockSession: SessionData = {
-  userId: 'privy_user_123',
-  walletId: 'wallet_456',
+	userId: 'privy_user_123',
+	walletId: 'wallet_456',
 };
 
 export const TEST_USER_ID = 789;

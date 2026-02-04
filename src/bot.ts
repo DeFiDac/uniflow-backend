@@ -25,8 +25,7 @@ const logSafeError = (label: string, err: unknown) => {
 	}
 
 	console.error(label, String(err));
-}
-
+};
 
 // Global error handler
 bot.on('error', (error) => {
@@ -48,7 +47,7 @@ bot.onText(/\/disconnect/, (msg) => handleDisconnect(msg, deps));
 // Startup validation
 (() => {
 	const requiredEnvVars = ['TELEGRAM_TOKEN', 'PRIVY_APP_ID', 'PRIVY_APP_SECRET', 'PRIVY_SIGNER_ID'];
-	const missing = requiredEnvVars.filter(v => !process.env[v]);
+	const missing = requiredEnvVars.filter((v) => !process.env[v]);
 
 	if (missing.length > 0) {
 		console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
