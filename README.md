@@ -21,7 +21,7 @@ The project maintains high test coverage across all command handlers:
 
 #### Coverage by File
 
-```
+```text
 File            | % Stmts | % Branch | % Funcs | % Lines
 ----------------|---------|----------|---------|--------
 constants.ts    |    100% |     100% |    100% |   100%
