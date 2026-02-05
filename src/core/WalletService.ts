@@ -1,0 +1,208 @@
+/**
+ * WalletService - Core wallet operations using Privy
+ * This service is platform-agnostic and can be used by both API and Telegram handlers
+ */
+
+import { PrivyClient, APIError } from '@privy-io/node';
+import {
+  SessionData,
+  TxParams,
+  WalletConnectResult,
+  WalletTransactResult,
+  ErrorCodes,
+} from './types';
+
+export class WalletService {
+  private privy: PrivyClient;
+  private sessions: Map<string, SessionData>;
+
+  constructor(privy: PrivyClient, sessions?: Map<string, SessionData>) {
+    this.privy = privy;
+    this.sessions = sessions || new Map();
+  }
+
+  /**
+   * Connect a user's wallet. Creates a new Privy user and wallet if needed.
+   * @param externalUserId - External user identifier (e.g., Telegram user ID, session UUID)
+   */
+  async connect(externalUserId: string): Promise<WalletConnectResult> {
+    try {
+      console.log(`[WalletService] Connecting wallet for user: ${externalUserId}`);
+
+      let privyUser;
+      let isNewUser = false;
+
+      try {
+        // Check if a Privy user exists with this external user ID
+        // We use Telegram user ID lookup first for backwards compatibility
+        privyUser = await this.privy.users().getByTelegramUserID({
+          telegram_user_id: externalUserId,
+        });
+        console.log(`[WalletService] Found existing Privy user: ${privyUser.id}`);
+      } catch (error) {
+        if (error instanceof APIError && error.status === 404) {
+          // Create new user
+          console.log(`[WalletService] Creating new Privy user for ${externalUserId}`);
+          isNewUser = true;
+          privyUser = await this.privy.users().create({
+            linked_accounts: [
+              {
+                type: 'telegram',
+                telegram_user_id: externalUserId,
+              },
+            ],
+          });
+          console.log(`[WalletService] Created new Privy user: ${privyUser.id}`);
+        } else {
+          throw error;
+        }
+      }
+
+      if (!privyUser || !privyUser.id) {
+        return {
+          success: false,
+          error: ErrorCodes.WALLET_CREATION_FAILED,
+        };
+      }
+
+      // Find or create wallet
+      let walletId: string;
+      const existingWallet = privyUser.linked_accounts.find((acc) => acc.type === 'wallet');
+
+      const hasEmbeddedWalletId =
+        existingWallet &&
+        'wallet_client' in existingWallet &&
+        existingWallet.wallet_client === 'privy' &&
+        'id' in existingWallet &&
+        typeof existingWallet.id === 'string';
+
+      if (hasEmbeddedWalletId) {
+        walletId = (existingWallet as { id: string }).id;
+        console.log(`[WalletService] Using existing embedded wallet: ${walletId}`);
+      } else {
+        // Create new wallet with agentic signer
+        console.log(`[WalletService] Creating new wallet for user ${privyUser.id}`);
+
+        const signerId = process.env.PRIVY_SIGNER_ID;
+        if (!signerId) {
+          return {
+            success: false,
+            error: 'PRIVY_SIGNER_ID environment variable is not configured',
+          };
+        }
+
+        const wallet = await this.privy.wallets().create({
+          chain_type: 'ethereum',
+          owner: { user_id: privyUser.id },
+          additional_signers: [
+            {
+              signer_id: signerId,
+              override_policy_ids: [],
+            },
+          ],
+        });
+        walletId = wallet.id;
+        console.log(`[WalletService] Created wallet: ${walletId}`);
+      }
+
+      // Store session
+      this.sessions.set(externalUserId, {
+        userId: privyUser.id,
+        walletId,
+      });
+
+      return {
+        success: true,
+        walletId,
+        privyUserId: privyUser.id,
+        isNewUser,
+      };
+    } catch (error) {
+      console.error('[WalletService] Connect error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : ErrorCodes.PRIVY_ERROR,
+      };
+    }
+  }
+
+  /**
+   * Execute a transaction for a connected user
+   * @param externalUserId - External user identifier
+   * @param txParams - Transaction parameters
+   */
+  async transact(externalUserId: string, txParams: TxParams): Promise<WalletTransactResult> {
+    try {
+      console.log(`[WalletService] Transaction request for user: ${externalUserId}`);
+
+      const session = this.sessions.get(externalUserId);
+      if (!session) {
+        console.log(`[WalletService] No session found for user: ${externalUserId}`);
+        return {
+          success: false,
+          error: ErrorCodes.SESSION_NOT_FOUND,
+        };
+      }
+
+      // Default to Ethereum mainnet if chainId not specified
+      const chainId = txParams.chainId || 1;
+      const caip2 = `eip155:${chainId}`;
+
+      console.log(`[WalletService] Sending transaction on ${caip2} for wallet ${session.walletId}`);
+
+      const txResponse = await this.privy
+        .wallets()
+        .ethereum()
+        .sendTransaction(session.walletId, {
+          caip2,
+          params: {
+            transaction: {
+              to: txParams.to,
+              value: txParams.value,
+              data: txParams.data || '0x',
+            },
+          },
+        });
+
+      console.log(`[WalletService] Transaction successful: ${txResponse.hash}`);
+
+      return {
+        success: true,
+        hash: txResponse.hash,
+      };
+    } catch (error) {
+      console.error('[WalletService] Transaction error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : ErrorCodes.TRANSACTION_FAILED,
+      };
+    }
+  }
+
+  /**
+   * Disconnect a user's session
+   * @param externalUserId - External user identifier
+   */
+  disconnect(externalUserId: string): boolean {
+    console.log(`[WalletService] Disconnecting user: ${externalUserId}`);
+    const hadSession = this.sessions.has(externalUserId);
+    this.sessions.delete(externalUserId);
+    return hadSession;
+  }
+
+  /**
+   * Check if a user has an active session
+   * @param externalUserId - External user identifier
+   */
+  getSession(externalUserId: string): SessionData | undefined {
+    return this.sessions.get(externalUserId);
+  }
+
+  /**
+   * Clear all sessions (for graceful shutdown)
+   */
+  clearAllSessions(): void {
+    console.log(`[WalletService] Clearing all sessions (${this.sessions.size} active)`);
+    this.sessions.clear();
+  }
+}
