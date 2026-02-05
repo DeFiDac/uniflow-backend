@@ -5,7 +5,7 @@
     "buildCommand": "pnpm install --frozen-lockfile && pnpm run build"
   },
   "deploy": {
-    "startCommand": "node dist/bot.js",
+    "startCommand": "node dist/server.js",
     "restartPolicyType": "ALWAYS",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 10
