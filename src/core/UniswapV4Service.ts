@@ -12,11 +12,11 @@ import {
 } from './v4-config';
 import { PriceService } from './PriceService';
 
-// GraphQL query to fetch positions for a wallet
+// GraphQL query to fetch positions for a wallet with pagination
 // Based on Uniswap V4 subgraph schema
 const GET_POSITIONS_QUERY = `
-  query GetPositions($owner: String!) {
-    positions(where: { owner: $owner }) {
+  query GetPositions($owner: String!, $first: Int!, $skip: Int!) {
+    positions(first: $first, skip: $skip, where: { owner: $owner }) {
       id
       tokenId
       owner
@@ -110,18 +110,45 @@ export class UniswapV4Service {
 			throw new Error(`Unsupported chainId: ${chainId}`);
 		}
 
-		// 1. Query The Graph for token IDs
+		// 1. Query The Graph for token IDs with pagination
 		const graphQLClient = new GraphQLClient(config.subgraphUrl);
 		const positions: V4Position[] = [];
+		const PAGE_SIZE = 100;
 
 		try {
-			const data = await graphQLClient.request<{
-				positions: Array<{ id: string; tokenId: string; owner: string }>;
-			}>(GET_POSITIONS_QUERY, {
-				owner: walletAddress.toLowerCase(),
-			});
+			// Fetch all positions using pagination
+			const allPositions: Array<{ id: string; tokenId: string; owner: string }> = [];
+			let skip = 0;
+			let hasMorePages = true;
 
-			if (!data.positions || data.positions.length === 0) {
+			while (hasMorePages) {
+				const data = await graphQLClient.request<{
+					positions: Array<{ id: string; tokenId: string; owner: string }>;
+				}>(GET_POSITIONS_QUERY, {
+					owner: walletAddress.toLowerCase(),
+					first: PAGE_SIZE,
+					skip: skip,
+				});
+
+				if (!data.positions || data.positions.length === 0) {
+					// Empty page, stop pagination
+					hasMorePages = false;
+				} else {
+					allPositions.push(...data.positions);
+					console.log(
+						`[UniswapV4Service] Fetched page at skip=${skip}: ${data.positions.length} positions`
+					);
+
+					// If we got fewer results than PAGE_SIZE, we've reached the end
+					if (data.positions.length < PAGE_SIZE) {
+						hasMorePages = false;
+					} else {
+						skip += PAGE_SIZE;
+					}
+				}
+			}
+
+			if (allPositions.length === 0) {
 				console.log(
 					`[UniswapV4Service] No positions found on chain ${chainId}`
 				);
@@ -129,13 +156,13 @@ export class UniswapV4Service {
 			}
 
 			console.log(
-				`[UniswapV4Service] Found ${data.positions.length} token IDs on chain ${chainId}`
+				`[UniswapV4Service] Found ${allPositions.length} token IDs total on chain ${chainId}`
 			);
 
 			// 2. Fetch position details for each token ID
 			const viemClient = this.getViemClient(chainId);
 
-			for (const pos of data.positions) {
+			for (const pos of allPositions) {
 				const tokenId = pos.tokenId || pos.id;
 				try {
 					const positionData = await this.fetchPositionData(
