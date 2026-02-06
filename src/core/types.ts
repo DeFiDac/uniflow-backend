@@ -116,6 +116,8 @@ export interface PolicyCreationResult {
 	success: boolean;
 	policyIds?: string[];
 	error?: string;
+}
+
 // Chain configuration
 export interface UniswapV4ChainConfig {
 	chainId: number;
