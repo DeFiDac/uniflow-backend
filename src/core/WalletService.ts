@@ -18,10 +18,12 @@ import {
 export class WalletService {
   private privy: PrivyClient;
   private sessions: Map<string, SessionData>;
+  private policyIds: string[];
 
-  constructor(privy: PrivyClient, sessions?: Map<string, SessionData>) {
+  constructor(privy: PrivyClient, sessions?: Map<string, SessionData>, policyIds?: string[]) {
     this.privy = privy;
     this.sessions = sessions || new Map();
+    this.policyIds = policyIds || [];
   }
 
   /**
@@ -142,7 +144,7 @@ export class WalletService {
           additional_signers: [
             {
               signer_id: signerId,
-              override_policy_ids: [],
+              override_policy_ids: this.policyIds,
             },
           ],
         });
