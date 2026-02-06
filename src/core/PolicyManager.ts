@@ -160,38 +160,30 @@ export class PolicyManager {
 	 * Throws error if policy doesn't match security requirements
 	 */
 	private validatePolicy(policy: Policy): void {
-		// Ensure PRIVY_SIGNER_ID is configured
-		const expectedSignerId = process.env.PRIVY_SIGNER_ID;
-		if (!expectedSignerId) {
-			throw new Error('PRIVY_SIGNER_ID environment variable is not set');
-		}
-
-		// Fail fast if owner doesn't match - security critical
-		if (policy.owner_id !== expectedSignerId) {
+		// Ensure PRIVY_SIGNER_ID exists
+		const signerId = process.env.PRIVY_SIGNER_ID;
+		if (!signerId) {
 			throw new Error(
-				`Policy owner mismatch: expected '${expectedSignerId}', but policy is owned by '${policy.owner_id}'. ` +
-					`This policy cannot be used for security reasons.`
+				'PRIVY_SIGNER_ID not configured. Cannot validate policy without signer ID.'
 			);
 		}
 
-		// Build expected configuration using the correct signer ID
-		const expected = PolicyConfig.getPolicyDefinition(expectedSignerId);
+		// Fail fast on owner mismatch
+		if (policy.owner_id !== signerId) {
+			throw new Error(
+				`Policy owner mismatch: expected '${signerId}' but found '${policy.owner_id}'. ` +
+					'This policy belongs to a different signer and cannot be used.'
+			);
+		}
 
-		// Fail fast if rule count doesn't match
+		// Build expected definition using the correct signer ID
+		const expected = PolicyConfig.getPolicyDefinition(signerId);
+
+		// Fail fast on rule count mismatch
 		if (policy.rules.length !== expected.rules.length) {
 			throw new Error(
-				`Policy rule count mismatch: expected ${expected.rules.length} rule(s), but policy has ${policy.rules.length} rule(s). ` +
-					`Policy configuration does not match security requirements.`
-			);
-		}
-
-		// Validate condition count in the composite rule
-		const expectedConditionCount = expected.rules[0]?.conditions?.length || 0;
-		const actualConditionCount = policy.rules[0]?.conditions?.length || 0;
-		if (expectedConditionCount !== actualConditionCount) {
-			throw new Error(
-				`Policy condition count mismatch: expected ${expectedConditionCount} condition(s), but policy has ${actualConditionCount} condition(s). ` +
-					`Policy configuration does not match security requirements.`
+				`Policy rule count mismatch: expected ${expected.rules.length} rules but found ${policy.rules.length}. ` +
+					'The existing policy may be outdated or corrupted.'
 			);
 		}
 	}

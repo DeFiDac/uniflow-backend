@@ -4,16 +4,41 @@
 
 import { Router, Request, Response } from 'express';
 import { WalletService } from '../core/WalletService';
+import { UniswapV4Service } from '../core/UniswapV4Service';
 import {
   ApiResponse,
   ConnectResponseData,
   TransactResponseData,
   SessionResponseData,
+  V4PositionsResponseData,
   ErrorCodes,
 } from '../core/types';
+import { SUPPORTED_CHAIN_IDS } from '../core/v4-config';
 import { validateUserId, validateTxParams } from './middleware';
 
-export function createRouter(walletService: WalletService): Router {
+/**
+ * Strictly validate and parse chainId from string
+ * Rejects strings like "1abc" that parseInt would accept
+ */
+function parseChainIdStrict(raw: string): number | null {
+  // Method 1: Check if string contains only digits
+  if (!/^\d+$/.test(raw)) {
+    return null;
+  }
+
+  // Method 2: Verify Number conversion round-trips exactly
+  const num = Number(raw);
+  if (!Number.isInteger(num) || String(num) !== raw) {
+    return null;
+  }
+
+  return num;
+}
+
+export function createRouter(
+  walletService: WalletService,
+  uniswapV4Service?: UniswapV4Service
+): Router {
   const router = Router();
 
   /**
@@ -145,6 +170,83 @@ export function createRouter(walletService: WalletService): Router {
     };
     res.status(200).json(response);
   });
+
+  /**
+   * GET /api/v4/positions/:walletAddress?chainId=1
+   * Fetch Uniswap V4 positions for wallet address
+   */
+  if (uniswapV4Service) {
+    router.get('/v4/positions/:walletAddress', async (req: Request, res: Response) => {
+      const walletAddress = req.params.walletAddress as string;
+      const chainIdParam = req.query.chainId;
+
+      // Validate wallet address format (0x + 40 hex chars)
+      if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Invalid wallet address format',
+          error: ErrorCodes.INVALID_REQUEST,
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      // Validate chainId if provided
+      let chainId: number | undefined;
+      if (chainIdParam) {
+        // Normalize to string
+        let chainIdStr: string;
+        if (typeof chainIdParam === 'string') {
+          chainIdStr = chainIdParam;
+        } else if (Array.isArray(chainIdParam)) {
+          chainIdStr = String(chainIdParam[0]);
+        } else {
+          chainIdStr = String(chainIdParam);
+        }
+
+        // Strictly parse chainId (rejects "1abc", etc.)
+        const parsedChainId = parseChainIdStrict(chainIdStr);
+        if (parsedChainId === null || !SUPPORTED_CHAIN_IDS.includes(parsedChainId)) {
+          const response: ApiResponse = {
+            success: false,
+            message: `Invalid chainId. Supported: ${SUPPORTED_CHAIN_IDS.join(', ')}`,
+            error: ErrorCodes.INVALID_REQUEST,
+          };
+          res.status(400).json(response);
+          return;
+        }
+
+        chainId = parsedChainId;
+      }
+
+      const result = await uniswapV4Service.getPositions(walletAddress, chainId);
+
+      if (result.success && result.positions) {
+        const responseData: V4PositionsResponseData = {
+          walletAddress,
+          positions: result.positions,
+          totalValueUsd: result.totalValueUsd || 0,
+          totalFeesUsd: result.totalFeesUsd || 0,
+          timestamp: new Date().toISOString(),
+          chainErrors: result.chainErrors,
+        };
+
+        const response: ApiResponse<V4PositionsResponseData> = {
+          success: true,
+          data: responseData,
+          message: `Found ${result.positions.length} positions`,
+        };
+        res.status(200).json(response);
+      } else {
+        const response: ApiResponse = {
+          success: false,
+          message: 'Failed to fetch positions',
+          error: result.error || ErrorCodes.INTERNAL_ERROR,
+        };
+        res.status(500).json(response);
+      }
+    });
+  }
 
   return router;
 }
