@@ -40,9 +40,8 @@ describe('PolicyConfig', () => {
 
 			allowedAddresses.forEach((addr) => {
 				// Verify address is checksummed by comparing with viem's getAddress output
+				// This is sufficient - getAddress returns the checksummed version
 				expect(addr).toBe(getAddress(addr));
-				// Checksummed addresses should NOT be all lowercase
-				expect(addr).not.toBe(addr.toLowerCase());
 			});
 		});
 	});
