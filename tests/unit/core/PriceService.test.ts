@@ -29,33 +29,55 @@ describe('PriceService', () => {
 		});
 
 		it('should warn when no API key provided', () => {
-			const consoleSpy = vi
-				.spyOn(console, 'warn')
-				.mockImplementation(() => {});
-			new PriceService();
-			expect(consoleSpy).toHaveBeenCalledWith(
-				expect.stringContaining('No CoinMarketCap API key')
-			);
-			consoleSpy.mockRestore();
+			// Stash and clear env var to ensure deterministic test
+			const originalApiKey = process.env.COINMARKETCAP_API_KEY;
+			delete process.env.COINMARKETCAP_API_KEY;
+
+			try {
+				const consoleSpy = vi
+					.spyOn(console, 'warn')
+					.mockImplementation(() => {});
+				new PriceService();
+				expect(consoleSpy).toHaveBeenCalledWith(
+					expect.stringContaining('No CoinMarketCap API key')
+				);
+				consoleSpy.mockRestore();
+			} finally {
+				// Restore original env var
+				if (originalApiKey !== undefined) {
+					process.env.COINMARKETCAP_API_KEY = originalApiKey;
+				}
+			}
 		});
 	});
 
 	describe('getTokenPrices', () => {
 		it('should return zero prices when no API key', async () => {
-			const serviceNoKey = new PriceService();
-			const consoleSpy = vi
-				.spyOn(console, 'warn')
-				.mockImplementation(() => {});
+			// Stash and clear env var to ensure deterministic test
+			const originalApiKey = process.env.COINMARKETCAP_API_KEY;
+			delete process.env.COINMARKETCAP_API_KEY;
 
-			const prices = await serviceNoKey.getTokenPrices(
-				['0xtoken1', '0xtoken2'],
-				1
-			);
+			try {
+				const serviceNoKey = new PriceService();
+				const consoleSpy = vi
+					.spyOn(console, 'warn')
+					.mockImplementation(() => {});
 
-			expect(prices.size).toBe(2);
-			expect(prices.get('0xtoken1')).toBe(0);
-			expect(prices.get('0xtoken2')).toBe(0);
-			consoleSpy.mockRestore();
+				const prices = await serviceNoKey.getTokenPrices(
+					['0xtoken1', '0xtoken2'],
+					1
+				);
+
+				expect(prices.size).toBe(2);
+				expect(prices.get('0xtoken1')).toBe(0);
+				expect(prices.get('0xtoken2')).toBe(0);
+				consoleSpy.mockRestore();
+			} finally {
+				// Restore original env var
+				if (originalApiKey !== undefined) {
+					process.env.COINMARKETCAP_API_KEY = originalApiKey;
+				}
+			}
 		});
 
 		it('should fetch prices from CoinMarketCap', async () => {
