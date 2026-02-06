@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { PolicyManager } from '../../../src/core/PolicyManager';
 import axios from 'axios';
 
@@ -16,18 +16,20 @@ describe('PolicyManager', () => {
 		process.env.PRIVY_APP_ID = 'test-app-id';
 		process.env.PRIVY_APP_SECRET = 'test-app-secret';
 		process.env.PRIVY_SIGNER_ID = 'test-signer-id';
+		delete process.env.PRIVY_POLICY_ID; // Ensure clean state
 	});
 
-	it('should create policy if none exists', async () => {
-		// Mock GET returns empty array
-		vi.mocked(axios.get).mockResolvedValue({ data: [] });
+	afterEach(() => {
+		delete process.env.PRIVY_POLICY_ID;
+	});
 
+	it('should create new policy when PRIVY_POLICY_ID not set', async () => {
 		// Mock POST returns new policy
 		vi.mocked(axios.post).mockResolvedValue({
 			data: {
 				id: 'policy-123',
 				name: 'UniFlow Conservative Security Policy',
-				rules: [],
+				rules: [{ conditions: [{}, {}, {}] }],
 				owner_id: 'test-signer-id',
 				created_at: Date.now(),
 			},
@@ -38,26 +40,33 @@ describe('PolicyManager', () => {
 		expect(result.success).toBe(true);
 		expect(result.policyIds).toEqual(['policy-123']);
 		expect(axios.post).toHaveBeenCalledOnce();
+		expect(axios.get).not.toHaveBeenCalled();
 	});
 
-	it('should reuse existing policy', async () => {
-		// Mock GET returns existing policy with composite rule
+	it('should retrieve and validate existing policy when PRIVY_POLICY_ID is set', async () => {
+		process.env.PRIVY_POLICY_ID = 'existing-policy-456';
+
+		// Mock GET returns existing policy
 		vi.mocked(axios.get).mockResolvedValue({
-			data: [
-				{
-					id: 'existing-policy-456',
-					name: 'UniFlow Conservative Security Policy',
-					rules: [{ conditions: [{}, {}, {}] }], // Single rule with 3 conditions
-					owner_id: 'test-signer-id',
-					created_at: Date.now(),
-				},
-			],
+			data: {
+				id: 'existing-policy-456',
+				name: 'UniFlow Conservative Security Policy',
+				rules: [{ conditions: [{}, {}, {}] }],
+				owner_id: 'test-signer-id',
+				created_at: Date.now(),
+			},
 		});
 
 		const result = await policyManager.initialize();
 
 		expect(result.success).toBe(true);
 		expect(result.policyIds).toEqual(['existing-policy-456']);
+		expect(axios.get).toHaveBeenCalledWith(
+			'https://api.privy.io/v1/policies/existing-policy-456',
+			expect.objectContaining({
+				headers: { 'privy-app-id': 'test-app-id' },
+			})
+		);
 		expect(axios.post).not.toHaveBeenCalled();
 	});
 
@@ -70,7 +79,85 @@ describe('PolicyManager', () => {
 		expect(result.error).toContain('PRIVY_SIGNER_ID');
 	});
 
+	it('should handle error when fetching non-existent policy', async () => {
+		process.env.PRIVY_POLICY_ID = 'non-existent-policy';
+
+		// Mock GET returns 404
+		const notFoundError = Object.assign(new Error('Not Found'), {
+			response: { status: 404 },
+		});
+		vi.mocked(axios.get).mockRejectedValue(notFoundError);
+
+		const result = await policyManager.initialize();
+
+		expect(result.success).toBe(false);
+	});
+
 	it('should throw error if getPolicyIds called before initialize', () => {
 		expect(() => policyManager.getPolicyIds()).toThrow('not initialized');
+	});
+
+	describe('Policy Validation', () => {
+		it('should reject policy with wrong owner_id', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-owner-policy';
+
+			// Mock GET returns policy with different owner
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-owner-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{ conditions: [{}, {}, {}] }],
+					owner_id: 'different-signer-id', // Wrong owner!
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('owner mismatch');
+			expect(result.error).toContain('test-signer-id');
+			expect(result.error).toContain('different-signer-id');
+		});
+
+		it('should reject policy with wrong number of rules', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-rules-policy';
+
+			// Mock GET returns policy with wrong number of rules
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-rules-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{}, {}], // Should be 1 rule, not 2!
+					owner_id: 'test-signer-id',
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('rule count mismatch');
+		});
+
+		it('should reject policy with wrong number of conditions', async () => {
+			process.env.PRIVY_POLICY_ID = 'wrong-conditions-policy';
+
+			// Mock GET returns policy with wrong number of conditions
+			vi.mocked(axios.get).mockResolvedValue({
+				data: {
+					id: 'wrong-conditions-policy',
+					name: 'UniFlow Conservative Security Policy',
+					rules: [{ conditions: [{}] }], // Should be 3 conditions, not 1!
+					owner_id: 'test-signer-id',
+					created_at: Date.now(),
+				},
+			});
+
+			const result = await policyManager.initialize();
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('condition count mismatch');
+		});
 	});
 });

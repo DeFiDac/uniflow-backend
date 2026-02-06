@@ -35,20 +35,30 @@ export class PolicyManager {
 				);
 			}
 
-			// Check if policy already exists
-			console.log('[PolicyManager] Checking for existing policies...');
-			const existingPolicy = await this.findPolicyByName('UniFlow Conservative Security Policy');
-
-			if (existingPolicy) {
-				console.log(`[PolicyManager] Found existing policy: ${existingPolicy.id}`);
-				this.policyIds = [existingPolicy.id];
-				this.validatePolicy(existingPolicy);
-			} else {
-				console.log('[PolicyManager] Creating new security policy...');
-				const policy = await this.createPolicy(signerId);
+			// Check if policy ID is provided via environment variable
+			const existingPolicyId = process.env.PRIVY_POLICY_ID;
+			if (existingPolicyId) {
+				console.log(`[PolicyManager] Verifying existing policy: ${existingPolicyId}`);
+				// Verify the policy exists by fetching it
+				const policy = await this.getPolicy(existingPolicyId);
 				this.policyIds = [policy.id];
-				console.log(`[PolicyManager] Created policy: ${policy.id}`);
+				this.validatePolicy(policy);
+				console.log(`[PolicyManager] Using existing policy: ${policy.id}`);
+				this.initialized = true;
+				return {
+					success: true,
+					policyIds: this.policyIds,
+				};
 			}
+
+			// Create new policy
+			console.log('[PolicyManager] Creating new security policy...');
+			const policy = await this.createPolicy(signerId);
+			this.policyIds = [policy.id];
+			console.log(`[PolicyManager] Created policy: ${policy.id}`);
+			console.log(
+				`[PolicyManager] 💡 TIP: Set PRIVY_POLICY_ID=${policy.id} in .env to skip policy creation on restart`
+			);
 
 			this.initialized = true;
 			return {
@@ -112,26 +122,18 @@ export class PolicyManager {
 	}
 
 	/**
-	 * Find existing policy by name
+	 * Get existing policy by ID
 	 */
-	private async findPolicyByName(name: string): Promise<Policy | null> {
+	private async getPolicy(policyId: string): Promise<Policy> {
 		const appId = process.env.PRIVY_APP_ID;
 		const appSecret = process.env.PRIVY_APP_SECRET;
 
-		try {
-			const response = await axios.get('https://api.privy.io/v1/policies', {
-				auth: { username: appId!, password: appSecret! },
-				headers: { 'privy-app-id': appId! },
-			});
+		const response = await axios.get(`https://api.privy.io/v1/policies/${policyId}`, {
+			auth: { username: appId!, password: appSecret! },
+			headers: { 'privy-app-id': appId! },
+		});
 
-			const policies = response.data;
-			return policies.find((p: Policy) => p.name === name) || null;
-		} catch (error) {
-			if (axios.isAxiosError(error) && error.response?.status === 404) {
-				return null;
-			}
-			throw error;
-		}
+		return response.data;
 	}
 
 	/**
@@ -154,17 +156,43 @@ export class PolicyManager {
 	}
 
 	/**
-	 * Validate existing policy
+	 * Validate existing policy matches expected configuration
+	 * Throws error if policy doesn't match security requirements
 	 */
 	private validatePolicy(policy: Policy): void {
-		const expected = PolicyConfig.getPolicyDefinition(policy.owner_id);
-
-		if (policy.rules.length !== expected.rules.length) {
-			console.warn('[PolicyManager] WARNING: Existing policy has different number of rules');
+		// Ensure PRIVY_SIGNER_ID is configured
+		const expectedSignerId = process.env.PRIVY_SIGNER_ID;
+		if (!expectedSignerId) {
+			throw new Error('PRIVY_SIGNER_ID environment variable is not set');
 		}
 
-		if (policy.owner_id !== process.env.PRIVY_SIGNER_ID) {
-			console.warn('[PolicyManager] WARNING: Policy owner_id mismatch');
+		// Fail fast if owner doesn't match - security critical
+		if (policy.owner_id !== expectedSignerId) {
+			throw new Error(
+				`Policy owner mismatch: expected '${expectedSignerId}', but policy is owned by '${policy.owner_id}'. ` +
+					`This policy cannot be used for security reasons.`
+			);
+		}
+
+		// Build expected configuration using the correct signer ID
+		const expected = PolicyConfig.getPolicyDefinition(expectedSignerId);
+
+		// Fail fast if rule count doesn't match
+		if (policy.rules.length !== expected.rules.length) {
+			throw new Error(
+				`Policy rule count mismatch: expected ${expected.rules.length} rule(s), but policy has ${policy.rules.length} rule(s). ` +
+					`Policy configuration does not match security requirements.`
+			);
+		}
+
+		// Validate condition count in the composite rule
+		const expectedConditionCount = expected.rules[0]?.conditions?.length || 0;
+		const actualConditionCount = policy.rules[0]?.conditions?.length || 0;
+		if (expectedConditionCount !== actualConditionCount) {
+			throw new Error(
+				`Policy condition count mismatch: expected ${expectedConditionCount} condition(s), but policy has ${actualConditionCount} condition(s). ` +
+					`Policy configuration does not match security requirements.`
+			);
 		}
 	}
 }
