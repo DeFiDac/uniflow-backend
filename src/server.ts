@@ -37,7 +37,21 @@ app.use(express.json());
 app.use(requestLogger);
 
 // Placeholder for WalletService (will be initialized after policy setup)
-let walletService: WalletService;
+let walletService: WalletService | undefined;
+
+/**
+ * Safe getter for WalletService
+ * Throws an error if WalletService has not been initialized
+ * @throws Error if WalletService is not initialized
+ */
+export function getWalletService(): WalletService {
+  if (!walletService) {
+    throw new Error(
+      'WalletService not initialized. Wait for server startup to complete before accessing WalletService.'
+    );
+  }
+  return walletService;
+}
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
@@ -140,9 +154,11 @@ const gracefulShutdown = async (signal: string) => {
       });
     });
 
-    // Clear sessions
-    walletService.clearAllSessions();
-    console.log('✅ Sessions cleared');
+    // Clear sessions (only if walletService was initialized)
+    if (walletService) {
+      walletService.clearAllSessions();
+      console.log('✅ Sessions cleared');
+    }
 
     console.log('👋 Shutdown complete');
     process.exit(0);
@@ -157,4 +173,6 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Export for testing
+// Note: walletService is undefined until startServer() completes
+// Use getWalletService() for safe access
 export { app, walletService };
