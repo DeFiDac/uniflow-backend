@@ -2,9 +2,10 @@
  * Unit tests for UniswapV4Service
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { UniswapV4Service } from '../../../src/core/UniswapV4Service';
 import { PriceService } from '../../../src/core/PriceService';
+import { V4Position } from '../../../src/core/types';
 
 // Mock factories (shared instances)
 const createMockPriceService = () => {
@@ -20,14 +21,60 @@ const createMockPriceService = () => {
 	};
 };
 
+// Mock position data factory
+const createMockPosition = (tokenId: string, chainId: number): V4Position => ({
+	tokenId,
+	chainId,
+	chainName: chainId === 1 ? 'Ethereum' : 'Base',
+	poolAddress: '0x1234...5678/0xabcd...efgh',
+	token0: {
+		token: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+		symbol: 'WETH',
+		amount: '1.5',
+		decimals: 18,
+		usdValue: 4500,
+	},
+	token1: {
+		token: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+		symbol: 'USDC',
+		amount: '4500.0',
+		decimals: 6,
+		usdValue: 4500,
+	},
+	liquidity: '1000000',
+	tickLower: -887220,
+	tickUpper: 887220,
+	feesUsd: 90,
+	totalValueUsd: 9000,
+});
+
 describe('UniswapV4Service', () => {
 	let service: UniswapV4Service;
 	let mockPriceService: ReturnType<typeof createMockPriceService>;
+	let getPositionsForChainSpy: any;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockPriceService = createMockPriceService();
 		service = new UniswapV4Service(mockPriceService as unknown as PriceService);
+
+		// Mock the private getPositionsForChain method to avoid real network calls
+		getPositionsForChainSpy = vi
+			.spyOn(service as any, 'getPositionsForChain')
+			.mockImplementation(
+				async (walletAddress: string, chainId: number): Promise<V4Position[]> => {
+					// Return empty array for most cases (deterministic)
+					// Can be overridden in specific tests
+					return [];
+				}
+			);
+	});
+
+	afterEach(() => {
+		// Restore the spy to avoid affecting other tests
+		if (getPositionsForChainSpy) {
+			getPositionsForChainSpy.mockRestore();
+		}
 	});
 
 	describe('constructor', () => {
@@ -71,30 +118,47 @@ describe('UniswapV4Service', () => {
 		});
 
 		it('should handle invalid chainId gracefully', async () => {
-			try {
-				await service.getPositions(
-					'0x0000000000000000000000000000000000000000',
-					99999
-				);
-			} catch (error) {
-				expect(error).toBeDefined();
-			}
+			// Mock getPositionsForChain to throw for invalid chainId
+			getPositionsForChainSpy.mockRejectedValueOnce(
+				new Error('Unsupported chainId: 99999')
+			);
+
+			const result = await service.getPositions(
+				'0x0000000000000000000000000000000000000000',
+				99999
+			);
+
+			// getPositions should still return success: true with chainErrors
+			expect(result.success).toBe(true);
+			expect(result.chainErrors).toBeDefined();
+			expect(result.chainErrors).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						chainId: 99999,
+						error: expect.any(String),
+					}),
+				])
+			);
 		});
 	});
 
 	describe('error handling', () => {
 		it('should include chainErrors when chain queries fail', async () => {
-			// Use an invalid wallet address format to trigger errors
+			// Mock getPositionsForChain to throw an error for chain 1
+			getPositionsForChainSpy.mockRejectedValueOnce(
+				new Error('GraphQL query failed')
+			);
+
 			const result = await service.getPositions(
 				'0x0000000000000000000000000000000000000000',
-				99999 // Invalid chainId
+				1
 			);
 
 			// Should still return success: true with chainErrors
 			expect(result.success).toBe(true);
-			if (result.chainErrors) {
-				expect(Array.isArray(result.chainErrors)).toBe(true);
-			}
+			expect(result.chainErrors).toBeDefined();
+			expect(Array.isArray(result.chainErrors)).toBe(true);
+			expect(result.chainErrors?.length).toBeGreaterThan(0);
 		});
 	});
 });
