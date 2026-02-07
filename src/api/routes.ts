@@ -62,12 +62,23 @@ export function createRouter(
 		const result = await walletService.connect(userId);
 
 		if (result.success && result.walletId && result.walletAddress) {
+			if (!result.privyUserId) {
+				const response: ApiResponse = {
+					success: false,
+					message: 'Connection succeeded but user ID unavailable',
+					error: ErrorCodes.INTERNAL_ERROR,
+				}
+
+				res.status(500).json(response);
+				return;
+			}
+
 			const response: ApiResponse<ConnectResponseData> = {
 				success: true,
 				data: {
 					walletId: result.walletId,
 					walletAddress: result.walletAddress,
-					privyUserId: result.privyUserId!,
+					privyUserId: result.privyUserId,
 					isNewUser: result.isNewUser || false,
 				},
 				message: result.isNewUser
