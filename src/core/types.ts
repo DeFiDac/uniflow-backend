@@ -124,6 +124,7 @@ export interface UniswapV4ChainConfig {
 	name: string;
 	positionManagerAddress: string;
 	poolManagerAddress: string;
+	stateViewAddress: string;
 	subgraphUrl: string;
 	rpcUrl: string;
 }
@@ -164,6 +165,7 @@ export interface UniswapV4ChainConfig {
 	name: string;
 	positionManagerAddress: string;
 	poolManagerAddress: string;
+	stateViewAddress: string;
 	subgraphUrl: string;
 	rpcUrl: string;
 }
@@ -174,4 +176,96 @@ export interface PriceData {
 	symbol: string;
 	priceUsd: number;
 	timestamp: number;
+}
+
+// V4 Position Minting Types
+
+// Pool discovery
+export interface V4PoolDiscoveryParams {
+	token0: string;
+	token1: string;
+	chainId: number;
+}
+
+export interface V4PoolDiscoveryResult {
+	success: boolean;
+	pool?: {
+		exists: boolean;
+		poolKey: {
+			currency0: string;
+			currency1: string;
+			fee: number;
+			tickSpacing: number;
+			hooks: string;
+		};
+		currentTick: number;
+		sqrtPriceX96: string;
+		liquidity: string;
+		token0Symbol: string;
+		token1Symbol: string;
+	};
+	error?: string;
+}
+
+// Token approval
+export interface V4ApprovalParams {
+	token: string;
+	amount: string; // Human-readable amount
+	chainId: number;
+}
+
+export interface V4ApprovalResult {
+	success: boolean;
+	txHash?: string;
+	error?: string;
+}
+
+// Position minting
+export interface V4MintSimpleParams {
+	token0: string;
+	token1: string;
+	amount0Desired: string; // Human-readable
+	amount1Desired: string; // Human-readable
+	chainId: number;
+	slippageTolerance?: number; // Default: 0.5%
+	deadline?: number; // Default: 20 min from now
+}
+
+export interface V4MintResult {
+	success: boolean;
+	txHash?: string;
+	chainId?: number;
+	expectedPosition?: {
+		poolKey: {
+			currency0: string;
+			currency1: string;
+			fee: number;
+			tickSpacing: number;
+			hooks: string;
+		};
+		tickLower: number;
+		tickUpper: number;
+		liquidity: string;
+		amount0: string;
+		amount1: string;
+	};
+	explorer?: string;
+	error?: string;
+}
+
+// API response types
+export interface V4PoolDiscoveryResponseData {
+	pool: V4PoolDiscoveryResult['pool'];
+}
+
+export interface V4ApprovalResponseData {
+	txHash: string;
+	explorer: string;
+}
+
+export interface V4MintResponseData {
+	txHash: string;
+	chainId: number;
+	expectedPosition: NonNullable<V4MintResult['expectedPosition']>;
+	explorer: string;
 }
