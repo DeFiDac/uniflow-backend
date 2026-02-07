@@ -3,7 +3,7 @@
  * Handles pool discovery, token approvals, and position minting
  */
 
-import { createPublicClient, http, PublicClient, parseUnits, formatUnits, encodeFunctionData } from 'viem';
+import { createPublicClient, http, PublicClient, parseUnits, formatUnits, encodeFunctionData, encodeAbiParameters, keccak256 } from 'viem';
 import { mainnet, bsc, base, arbitrum } from 'viem/chains';
 import { Pool, Position, V4PositionManager } from '@uniswap/v4-sdk';
 import { Token, CurrencyAmount, Percent } from '@uniswap/sdk-core';
@@ -173,10 +173,35 @@ export class UniswapV4MintService {
 				return null;
 			}
 
-			// Note: We don't have a pool ID here, we would need to compute it
-			// For now, return a default liquidity value
-			// In production, you should compute the pool ID properly
-			const liquidity = 0n;
+			// Compute poolId by encoding PoolKey and hashing it
+			// PoolKey struct: (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)
+			const encodedPoolKey = encodeAbiParameters(
+				[
+					{ name: 'currency0', type: 'address' },
+					{ name: 'currency1', type: 'address' },
+					{ name: 'fee', type: 'uint24' },
+					{ name: 'tickSpacing', type: 'int24' },
+					{ name: 'hooks', type: 'address' },
+				],
+				[
+					poolKey.currency0 as `0x${string}`,
+					poolKey.currency1 as `0x${string}`,
+					poolKey.fee,
+					poolKey.tickSpacing,
+					poolKey.hooks as `0x${string}`,
+				]
+			);
+
+			// poolId = keccak256(abi.encode(poolKey))
+			const poolId = keccak256(encodedPoolKey);
+
+			// Query actual liquidity from StateView
+			const liquidity = (await client.readContract({
+				address: config.stateViewAddress as `0x${string}`,
+				abi: STATE_VIEW_ABI,
+				functionName: 'getLiquidity',
+				args: [poolId],
+			})) as bigint;
 
 			return {
 				sqrtPriceX96,
