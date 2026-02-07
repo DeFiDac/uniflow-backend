@@ -225,8 +225,8 @@ export const STATE_VIEW_ABI = [
 		outputs: [
 			{ name: 'sqrtPriceX96', type: 'uint160' },
 			{ name: 'tick', type: 'int24' },
-			{ name: 'protocolFee', type: 'uint8' },
-			{ name: 'lpFee', type: 'uint8' },
+			{ name: 'protocolFee', type: 'uint24' },
+			{ name: 'lpFee', type: 'uint24' },
 		],
 	},
 	{
