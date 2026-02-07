@@ -82,7 +82,7 @@ export class UniswapV4Service {
 
 	/**
 	 * Fetch positions for a specific chain
-	 * Uses ERC721 enumeration instead of subgraph (V4 subgraph doesn't index positions)
+	 * Uses subgraph to discover owned token IDs, then fetches position details on-chain
 	 */
 	private async getPositionsForChain(
 		walletAddress: string,
@@ -168,15 +168,15 @@ export class UniswapV4Service {
 			functionName: 'getPoolAndPositionInfo',
 			args: [BigInt(tokenId)],
 		})) as [
-			{
-				currency0: string;
-				currency1: string;
-				fee: number;
-				tickSpacing: number;
-				hooks: string;
-			},
-			bigint
-		];
+				{
+					currency0: string;
+					currency1: string;
+					fee: number;
+					tickSpacing: number;
+					hooks: string;
+				},
+				bigint
+			];
 
 		// Step 2: Decode packed position info (uint256)
 		// Bit layout: poolId (200 bits) | tickUpper (24 bits) | tickLower (24 bits) | hasSubscriber (8 bits)
