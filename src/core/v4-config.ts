@@ -69,6 +69,7 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 		name: 'Ethereum',
 		positionManagerAddress: '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e',
 		poolManagerAddress: '0x000000000004444c5dc75cB358380D2e3dE08A90',
+		stateViewAddress: '0x7ffe42c4a5deea5b0fec41c94c136cf115597227',
 		subgraphUrl: buildSubgraphUrl(1),
 		rpcUrl: INFURA_RPCS[1] || PUBLIC_RPCS[1],
 	},
@@ -77,6 +78,7 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 		name: 'BSC',
 		positionManagerAddress: '0x7a4a5c919ae2541aed11041a1aeee68f1287f95b',
 		poolManagerAddress: '0x28e2ea090877bf75740558f6bfb36a5ffee9e9df',
+		stateViewAddress: '0xd13dd3d6e93f276fafc9db9e6bb47c1180aee0c4',
 		subgraphUrl: buildSubgraphUrl(56),
 		rpcUrl: INFURA_RPCS[56] || PUBLIC_RPCS[56],
 	},
@@ -85,6 +87,7 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 		name: 'Base',
 		positionManagerAddress: '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e',
 		poolManagerAddress: '0x000000000004444c5dc75cB358380D2e3dE08A90',
+		stateViewAddress: '0xa3c0c9b65bad0b08107aa264b0f3db444b867a71',
 		subgraphUrl: buildSubgraphUrl(8453),
 		rpcUrl: INFURA_RPCS[8453] || PUBLIC_RPCS[8453],
 	},
@@ -93,6 +96,7 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 		name: 'Arbitrum One',
 		positionManagerAddress: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869',
 		poolManagerAddress: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+		stateViewAddress: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
 		subgraphUrl: buildSubgraphUrl(42161),
 		rpcUrl: INFURA_RPCS[42161] || PUBLIC_RPCS[42161],
 	},
@@ -101,6 +105,7 @@ export const V4_CHAIN_CONFIGS: Record<number, UniswapV4ChainConfig> = {
 		name: 'Unichain',
 		positionManagerAddress: '0xf969aee60879c54baaed9f3ed26147db216fd664',
 		poolManagerAddress: '0x00b036b58a818b1bc34d502d3fe730db729e62ac',
+		stateViewAddress: '0x86e8631a016f9068c3f085faf484ee3f5fdee8f2',
 		subgraphUrl: buildSubgraphUrl(130),
 		rpcUrl: INFURA_RPCS[130] || PUBLIC_RPCS[130],
 	},
@@ -210,7 +215,30 @@ export const POOL_MANAGER_ABI = [
 	},
 ] as const;
 
-// ERC20 ABI - for token metadata
+// State View ABI - for querying pool state
+export const STATE_VIEW_ABI = [
+	{
+		name: 'getSlot0',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [{ name: 'poolId', type: 'bytes32' }],
+		outputs: [
+			{ name: 'sqrtPriceX96', type: 'uint160' },
+			{ name: 'tick', type: 'int24' },
+			{ name: 'protocolFee', type: 'uint8' },
+			{ name: 'lpFee', type: 'uint8' },
+		],
+	},
+	{
+		name: 'getLiquidity',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [{ name: 'poolId', type: 'bytes32' }],
+		outputs: [{ name: 'liquidity', type: 'uint128' }],
+	},
+] as const;
+
+// ERC20 ABI - for token metadata and approvals
 export const ERC20_ABI = [
 	{
 		name: 'symbol',
@@ -225,5 +253,32 @@ export const ERC20_ABI = [
 		stateMutability: 'view',
 		inputs: [],
 		outputs: [{ name: '', type: 'uint8' }],
+	},
+	{
+		name: 'balanceOf',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [{ name: 'account', type: 'address' }],
+		outputs: [{ name: '', type: 'uint256' }],
+	},
+	{
+		name: 'allowance',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [
+			{ name: 'owner', type: 'address' },
+			{ name: 'spender', type: 'address' },
+		],
+		outputs: [{ name: '', type: 'uint256' }],
+	},
+	{
+		name: 'approve',
+		type: 'function',
+		stateMutability: 'nonpayable',
+		inputs: [
+			{ name: 'spender', type: 'address' },
+			{ name: 'amount', type: 'uint256' },
+		],
+		outputs: [{ name: '', type: 'bool' }],
 	},
 ] as const;
