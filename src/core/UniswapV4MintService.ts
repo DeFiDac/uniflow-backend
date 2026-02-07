@@ -504,15 +504,23 @@ export class UniswapV4MintService {
 
 			const pool = poolDiscovery.pool;
 
-			// Step 2: Get token info
+			// Detect if tokens were swapped during pool discovery
+			// discoverPool sorts tokens (currency0 < currency1), so we need to map amounts accordingly
+			const tokensSwapped = token0.toLowerCase() !== pool.poolKey.currency0.toLowerCase();
+
+			// Map amounts to match pool's sorted currency order
+			const amount0DesiredForPool = tokensSwapped ? amount1Desired : amount0Desired;
+			const amount1DesiredForPool = tokensSwapped ? amount0Desired : amount1Desired;
+
+			// Step 2: Get token info (now correctly aligned with pool currencies)
 			const [token0Info, token1Info] = await Promise.all([
 				this.getTokenInfo(pool.poolKey.currency0, chainId),
 				this.getTokenInfo(pool.poolKey.currency1, chainId),
 			]);
 
-			// Parse amounts
-			const amount0Wei = parseUnits(amount0Desired, token0Info.decimals);
-			const amount1Wei = parseUnits(amount1Desired, token1Info.decimals);
+			// Parse amounts (using correctly mapped amounts)
+			const amount0Wei = parseUnits(amount0DesiredForPool, token0Info.decimals);
+			const amount1Wei = parseUnits(amount1DesiredForPool, token1Info.decimals);
 
 			// Step 3: Check balances
 			const [balance0Check, balance1Check] = await Promise.all([
@@ -628,8 +636,9 @@ export class UniswapV4MintService {
 						tickLower,
 						tickUpper,
 						liquidity: positionSdk.liquidity.toString(),
-						amount0: amount0Desired,
-						amount1: amount1Desired,
+						// Use amounts aligned with pool's currency order
+						amount0: amount0DesiredForPool,
+						amount1: amount1DesiredForPool,
 					},
 					explorer: this.getExplorerUrl(result.hash, chainId),
 				};
