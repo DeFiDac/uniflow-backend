@@ -136,7 +136,7 @@ export function requestLogger(req: Request, _res: Response, next: NextFunction):
  * Validate pool discovery parameters
  */
 export function validatePoolDiscoveryParams(req: Request, res: Response, next: NextFunction): void {
-  const { token0, token1, chainId } = req.query;
+  const { token0, token1, chainId, fee, tickSpacing } = req.query;
 
   // Validate token0
   if (!token0 || typeof token0 !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(token0)) {
@@ -170,6 +170,34 @@ export function validatePoolDiscoveryParams(req: Request, res: Response, next: N
     };
     res.status(400).json(response);
     return;
+  }
+
+  // Validate optional fee parameter
+  if (fee !== undefined) {
+    const feeNum = Number(fee);
+    if (typeof fee !== 'string' || isNaN(feeNum) || feeNum < 0 || !Number.isInteger(feeNum)) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Invalid fee parameter. Must be a non-negative integer',
+        error: ErrorCodes.INVALID_REQUEST,
+      };
+      res.status(400).json(response);
+      return;
+    }
+  }
+
+  // Validate optional tickSpacing parameter
+  if (tickSpacing !== undefined) {
+    const tickSpacingNum = Number(tickSpacing);
+    if (typeof tickSpacing !== 'string' || isNaN(tickSpacingNum) || tickSpacingNum <= 0 || !Number.isInteger(tickSpacingNum)) {
+      const response: ApiResponse = {
+        success: false,
+        message: 'Invalid tickSpacing parameter. Must be a positive integer',
+        error: ErrorCodes.INVALID_REQUEST,
+      };
+      res.status(400).json(response);
+      return;
+    }
   }
 
   next();

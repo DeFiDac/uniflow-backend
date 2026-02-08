@@ -52,6 +52,20 @@ const FEE_TIERS = [
 	{ fee: 10000, tickSpacing: 200 },
 ];
 
+/**
+ * Derive default tickSpacing from fee tier
+ * Based on standard Uniswap V4 fee tier mapping
+ */
+function getDefaultTickSpacing(fee: number): number {
+	const feeToTickSpacing: Record<number, number> = {
+		100: 1,
+		500: 10,
+		3000: 60,
+		10000: 200,
+	};
+	return feeToTickSpacing[fee] || 60; // Default to 60 if unknown fee
+}
+
 interface TokenInfo {
 	address: string;
 	symbol: string;
@@ -218,7 +232,7 @@ export class UniswapV4MintService {
 	 * Discover pool for token pair (tries multiple fee tiers)
 	 */
 	async discoverPool(params: V4PoolDiscoveryParams): Promise<V4PoolDiscoveryResult> {
-		const { token0, token1, chainId } = params;
+		const { token0, token1, chainId, fee: requestedFee, tickSpacing: requestedTickSpacing } = params;
 
 		try {
 			// Validate chain
@@ -239,8 +253,28 @@ export class UniswapV4MintService {
 				this.getTokenInfo(currency1, chainId),
 			]);
 
+			// Determine which fee tiers to try
+			let feeTiersToTry: Array<{ fee: number; tickSpacing: number }>;
+
+			if (requestedFee !== undefined) {
+				// User specified a fee - query ONLY that fee tier
+				const tickSpacing =
+					requestedTickSpacing !== undefined ? requestedTickSpacing : getDefaultTickSpacing(requestedFee);
+
+				feeTiersToTry = [{ fee: requestedFee, tickSpacing }];
+			} else if (requestedTickSpacing !== undefined) {
+				// tickSpacing without fee - error (ambiguous)
+				return {
+					success: false,
+					error: 'tickSpacing cannot be specified without fee. Please provide both or neither.',
+				};
+			} else {
+				// No fee specified - try all fee tiers (backward compatible)
+				feeTiersToTry = FEE_TIERS;
+			}
+
 			// Try each fee tier
-			for (const { fee, tickSpacing } of FEE_TIERS) {
+			for (const { fee, tickSpacing } of feeTiersToTry) {
 				const poolKey = {
 					currency0,
 					currency1,
@@ -268,6 +302,15 @@ export class UniswapV4MintService {
 			}
 
 			// No pool found with any fee tier
+			// Use requested fee/tickSpacing for defaults if provided, otherwise use 3000/60
+			const defaultFee = requestedFee !== undefined ? requestedFee : 3000;
+			const defaultTickSpacing =
+				requestedTickSpacing !== undefined
+					? requestedTickSpacing
+					: requestedFee !== undefined
+						? getDefaultTickSpacing(requestedFee)
+						: 60;
+
 			return {
 				success: true,
 				pool: {
@@ -275,8 +318,8 @@ export class UniswapV4MintService {
 					poolKey: {
 						currency0,
 						currency1,
-						fee: 3000, // Default
-						tickSpacing: 60,
+						fee: defaultFee,
+						tickSpacing: defaultTickSpacing,
 						hooks: NATIVE_ETH_ADDRESS,
 					},
 					currentTick: 0,
