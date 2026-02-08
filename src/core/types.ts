@@ -193,6 +193,7 @@ export interface V4PoolDiscoveryResult {
 	success: boolean;
 	pool?: {
 		exists: boolean;
+		poolId?: string;
 		poolKey: {
 			currency0: string;
 			currency1: string;

@@ -18,7 +18,7 @@ import {
 	V4MintResult,
 	ErrorCodes,
 } from './types';
-import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI, POOL_MANAGER_ABI } from './v4-config';
+import { V4_CHAIN_CONFIGS, STATE_VIEW_ABI, ERC20_ABI } from './v4-config';
 import { WalletService } from './WalletService';
 
 // Unichain chain config (not in viem yet)
@@ -73,6 +73,7 @@ interface TokenInfo {
 }
 
 interface PoolState {
+	poolId: string;
 	sqrtPriceX96: bigint;
 	tick: number;
 	liquidity: bigint;
@@ -164,21 +165,41 @@ export class UniswapV4MintService {
 		const client = this.getViemClient(chainId);
 
 		try {
-			// Call getSlot0 from PoolManager
-			const slot0Result = await client.readContract({
-				address: config.poolManagerAddress as `0x${string}`,
-				abi: POOL_MANAGER_ABI,
-				functionName: 'getSlot0',
-				args: [
-					{
-						currency0: poolKey.currency0 as `0x${string}`,
-						currency1: poolKey.currency1 as `0x${string}`,
-						fee: poolKey.fee,
-						tickSpacing: poolKey.tickSpacing,
-						hooks: poolKey.hooks as `0x${string}`,
-					},
-				],
-			});
+			// Compute poolId = keccak256(abi.encode(poolKey))
+			const poolId = keccak256(
+				encodeAbiParameters(
+					[
+						{ name: 'currency0', type: 'address' },
+						{ name: 'currency1', type: 'address' },
+						{ name: 'fee', type: 'uint24' },
+						{ name: 'tickSpacing', type: 'int24' },
+						{ name: 'hooks', type: 'address' },
+					],
+					[
+						poolKey.currency0 as `0x${string}`,
+						poolKey.currency1 as `0x${string}`,
+						poolKey.fee,
+						poolKey.tickSpacing,
+						poolKey.hooks as `0x${string}`,
+					]
+				)
+			);
+
+			// Query slot0 and liquidity from StateView using poolId
+			const [slot0Result, liquidity] = await Promise.all([
+				client.readContract({
+					address: config.stateViewAddress as `0x${string}`,
+					abi: STATE_VIEW_ABI,
+					functionName: 'getSlot0',
+					args: [poolId],
+				}),
+				client.readContract({
+					address: config.stateViewAddress as `0x${string}`,
+					abi: STATE_VIEW_ABI,
+					functionName: 'getLiquidity',
+					args: [poolId],
+				}),
+			]);
 
 			const [sqrtPriceX96, tick] = slot0Result as readonly [bigint, number, number, number];
 
@@ -187,40 +208,11 @@ export class UniswapV4MintService {
 				return null;
 			}
 
-			// Compute poolId by encoding PoolKey and hashing it
-			// PoolKey struct: (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks)
-			const encodedPoolKey = encodeAbiParameters(
-				[
-					{ name: 'currency0', type: 'address' },
-					{ name: 'currency1', type: 'address' },
-					{ name: 'fee', type: 'uint24' },
-					{ name: 'tickSpacing', type: 'int24' },
-					{ name: 'hooks', type: 'address' },
-				],
-				[
-					poolKey.currency0 as `0x${string}`,
-					poolKey.currency1 as `0x${string}`,
-					poolKey.fee,
-					poolKey.tickSpacing,
-					poolKey.hooks as `0x${string}`,
-				]
-			);
-
-			// poolId = keccak256(abi.encode(poolKey))
-			const poolId = keccak256(encodedPoolKey);
-
-			// Query actual liquidity from StateView
-			const liquidity = (await client.readContract({
-				address: config.stateViewAddress as `0x${string}`,
-				abi: STATE_VIEW_ABI,
-				functionName: 'getLiquidity',
-				args: [poolId],
-			})) as bigint;
-
 			return {
+				poolId,
 				sqrtPriceX96,
 				tick,
-				liquidity,
+				liquidity: liquidity as bigint,
 			};
 		} catch (error) {
 			console.error('Failed to fetch pool state:', error);
@@ -290,6 +282,7 @@ export class UniswapV4MintService {
 						success: true,
 						pool: {
 							exists: true,
+							poolId: poolState.poolId,
 							poolKey,
 							currentTick: poolState.tick,
 							sqrtPriceX96: poolState.sqrtPriceX96.toString(),
